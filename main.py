@@ -14,7 +14,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Agro Neros - Facturas API")
+app = FastAPI(title="La Delia - Facturas API")
 
 # Agregar CORS
 app.add_middleware(
@@ -33,7 +33,7 @@ user_contexts = {}
 
 @app.get("/")
 def root():
-    return {"status": "ok", "service": "Agro Neros Facturas API"}
+    return {"status": "ok", "service": "La Delia - Facturas API"}
 
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
