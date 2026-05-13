@@ -43,8 +43,8 @@ async def whatsapp_webhook(request: Request):
         message_body = form_data.get("Body", "")
         media_url = form_data.get("MediaUrl0")
         
-        phone_clean = phone_number.replace("whatsapp:", "")
-        logger.info(f"Mensaje recibido de {phone_clean}")
+        phone_clean = phone_number.replace("whatsapp:", "") if phone_number else "unknown"
+        logger.info(f"📨 Webhook recibido - From: {phone_number}, Media: {bool(media_url)}, Body: {message_body[:50] if message_body else 'N/A'}")
         
         if phone_clean not in user_contexts:
             user_contexts[phone_clean] = {
@@ -54,15 +54,20 @@ async def whatsapp_webhook(request: Request):
             }
         
         if media_url:
-            logger.info(f"Procesando imagen para {phone_clean}")
-            image_bytes = await twilio_service.download_media(media_url)
-            factura_data = await claude_service.extract_invoice_data(image_bytes)
+            try:
+                logger.info(f"🖼️ Procesando imagen para {phone_clean}")
+                image_bytes = await twilio_service.download_media(media_url)
+                logger.info(f"✅ Imagen descargada: {len(image_bytes)} bytes")
+                
+                factura_data = await claude_service.extract_invoice_data(image_bytes)
+                logger.info(f"✅ Datos extraídos: {factura_data}")
             
             factura_id = await firestore_service.save_invoice(
                 factura_data=factura_data,
                 phone_number=phone_clean,
                 image_base64=base64.standard_b64encode(image_bytes).decode("utf-8")
             )
+            logger.info(f"💾 Factura guardada: {factura_id}")
             
             user_contexts[phone_clean]["factura_id"] = factura_id
             user_contexts[phone_clean]["estado"] = "factura_registrada"
@@ -77,7 +82,14 @@ async def whatsapp_webhook(request: Request):
 
 Escribí *"estado"* para consultar en cualquier momento."""
             
+            logger.info(f"📤 Enviando respuesta a {phone_clean}")
             await twilio_service.send_message(phone_clean, response_text)
+            logger.info(f"✅ Respuesta enviada")
+            
+            except Exception as e:
+                logger.error(f"❌ Error procesando imagen: {str(e)}", exc_info=True)
+                error_msg = f"❌ Error procesando la factura: {str(e)}"
+                await twilio_service.send_message(phone_clean, error_msg)
             
         elif message_body.lower().strip() == "estado":
             logger.info(f"Consulta de estado desde {phone_clean}")
