@@ -4,13 +4,10 @@ import sys
 import base64
 from datetime import datetime
 
-# Agregar path para importar modules
-sys.path.insert(0, '/var/task')
-
 def handler(request):
     """Handler para Vercel Serverless Functions"""
     
-    print(f"🔔 WEBHOOK RECIBIDO: {request.method} {request.path}")
+    print(f"🔔 WEBHOOK RECIBIDO: {request.method}")
     
     if request.method == 'GET':
         return {
@@ -20,10 +17,12 @@ def handler(request):
     
     if request.method == 'POST':
         try:
+            # Importar Twilio
+            from twilio.rest import Client
+            
             # Leer form data de Twilio
             body = request.get('body', {})
             if isinstance(body, str):
-                # Si es string, parsearlo
                 import urllib.parse
                 body = dict(urllib.parse.parse_qsl(body))
             
@@ -37,10 +36,29 @@ def handler(request):
             
             phone_clean = phone_number.replace('whatsapp:', '') if phone_number else 'unknown'
             
-            # Respuesta simple de prueba
-            response_msg = "✅ Webhook recibido correctamente!"
+            # Inicializar cliente Twilio
+            account_sid = os.getenv('TWILIO_ACCOUNT_SID')
+            auth_token = os.getenv('TWILIO_AUTH_TOKEN')
+            twilio_phone = os.getenv('TWILIO_PHONE')
             
-            print(f"✅ Respuesta enviada a {phone_clean}")
+            print(f"🔑 Twilio SID: {account_sid[:10] if account_sid else 'MISSING'}...")
+            
+            if not account_sid or not auth_token:
+                print("❌ Credenciales Twilio no configuradas")
+                return {'statusCode': 200, 'body': ''}
+            
+            client = Client(account_sid, auth_token)
+            
+            # Enviar respuesta por WhatsApp
+            response_msg = "✅ Factura recibida! Estamos procesándola..."
+            
+            message = client.messages.create(
+                from_=f'whatsapp:{twilio_phone}',
+                to=f'whatsapp:{phone_clean}',
+                body=response_msg
+            )
+            
+            print(f"✅ Mensaje enviado: {message.sid}")
             
             return {
                 'statusCode': 200,
@@ -61,3 +79,4 @@ def handler(request):
         'statusCode': 405,
         'body': 'Method not allowed'
     }
+
