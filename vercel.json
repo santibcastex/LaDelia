@@ -1,10 +1,6 @@
-[build]
-command = "pip install -r requirements.txt"
+{
+  "buildCommand": "pip install -r requirements.txt",
+  "framework": "other",
+  "public": false
+}
 
-[[redirects]]
-source = "/:path*"
-destination = "/api/:path*"
-status = 200
-
-[[environment]]
-PYTHONUNBUFFERED = "1"
