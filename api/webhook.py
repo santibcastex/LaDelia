@@ -1,8 +1,7 @@
 import json
 import os
-import sys
-import base64
-from datetime import datetime
+from twilio.rest import Client
+from twilio.twiml.messaging_response import MessagingResponse
 
 def handler(request):
     """Handler para Vercel Serverless Functions"""
@@ -12,14 +11,12 @@ def handler(request):
     if request.method == 'GET':
         return {
             'statusCode': 200,
+            'headers': {'Content-Type': 'application/json'},
             'body': json.dumps({'status': 'ok', 'service': 'La Delia - Facturas API'})
         }
     
     if request.method == 'POST':
         try:
-            # Importar Twilio
-            from twilio.rest import Client
-            
             # Leer form data de Twilio
             body = request.get('body', {})
             if isinstance(body, str):
@@ -36,33 +33,16 @@ def handler(request):
             
             phone_clean = phone_number.replace('whatsapp:', '') if phone_number else 'unknown'
             
-            # Inicializar cliente Twilio
-            account_sid = os.getenv('TWILIO_ACCOUNT_SID')
-            auth_token = os.getenv('TWILIO_AUTH_TOKEN')
-            twilio_phone = os.getenv('TWILIO_PHONE')
+            # Crear respuesta TwiML
+            resp = MessagingResponse()
+            resp.message("✅ Factura recibida! Estamos procesándola...")
             
-            print(f"🔑 Twilio SID: {account_sid[:10] if account_sid else 'MISSING'}...")
-            
-            if not account_sid or not auth_token:
-                print("❌ Credenciales Twilio no configuradas")
-                return {'statusCode': 200, 'body': ''}
-            
-            client = Client(account_sid, auth_token)
-            
-            # Enviar respuesta por WhatsApp
-            response_msg = "✅ Factura recibida! Estamos procesándola..."
-            
-            message = client.messages.create(
-                from_=f'whatsapp:{twilio_phone}',
-                to=f'whatsapp:{phone_clean}',
-                body=response_msg
-            )
-            
-            print(f"✅ Mensaje enviado: {message.sid}")
+            print(f"✅ Respuesta TwiML enviada")
             
             return {
                 'statusCode': 200,
-                'body': ''
+                'headers': {'Content-Type': 'text/xml'},
+                'body': str(resp)
             }
         
         except Exception as e:
@@ -70,13 +50,19 @@ def handler(request):
             import traceback
             traceback.print_exc()
             
+            # Devolver respuesta TwiML aunque haya error
+            resp = MessagingResponse()
+            resp.message("❌ Error procesando tu mensaje")
+            
             return {
                 'statusCode': 200,
-                'body': ''
+                'headers': {'Content-Type': 'text/xml'},
+                'body': str(resp)
             }
     
     return {
         'statusCode': 405,
         'body': 'Method not allowed'
     }
+
 
