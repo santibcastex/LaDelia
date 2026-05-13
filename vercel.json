@@ -1,5 +1,5 @@
 {
-  "buildCommand": "pip install -r requirements.txt",
-  "public": false
+  "framework": "fastapi",
+  "buildCommand": "pip install -r requirements.txt"
 }
 
