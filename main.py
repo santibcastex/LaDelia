@@ -61,18 +61,18 @@ async def whatsapp_webhook(request: Request):
                 
                 factura_data = await claude_service.extract_invoice_data(image_bytes)
                 logger.info(f"✅ Datos extraídos: {factura_data}")
-            
-            factura_id = await firestore_service.save_invoice(
-                factura_data=factura_data,
-                phone_number=phone_clean,
-                image_base64=base64.standard_b64encode(image_bytes).decode("utf-8")
-            )
-            logger.info(f"💾 Factura guardada: {factura_id}")
-            
-            user_contexts[phone_clean]["factura_id"] = factura_id
-            user_contexts[phone_clean]["estado"] = "factura_registrada"
-            
-            response_text = f"""✅ *Factura registrada correctamente*
+                
+                factura_id = await firestore_service.save_invoice(
+                    factura_data=factura_data,
+                    phone_number=phone_clean,
+                    image_base64=base64.standard_b64encode(image_bytes).decode("utf-8")
+                )
+                logger.info(f"💾 Factura guardada: {factura_id}")
+                
+                user_contexts[phone_clean]["factura_id"] = factura_id
+                user_contexts[phone_clean]["estado"] = "factura_registrada"
+                
+                response_text = f"""✅ *Factura registrada correctamente*
 
 📋 *Detalles:*
 • Número: {factura_data.get('numero_factura')}
@@ -81,11 +81,11 @@ async def whatsapp_webhook(request: Request):
 • Estado: _Pendiente validación_
 
 Escribí *"estado"* para consultar en cualquier momento."""
-            
-            logger.info(f"📤 Enviando respuesta a {phone_clean}")
-            await twilio_service.send_message(phone_clean, response_text)
-            logger.info(f"✅ Respuesta enviada")
-            
+                
+                logger.info(f"📤 Enviando respuesta a {phone_clean}")
+                await twilio_service.send_message(phone_clean, response_text)
+                logger.info(f"✅ Respuesta enviada")
+                
             except Exception as e:
                 logger.error(f"❌ Error procesando imagen: {str(e)}", exc_info=True)
                 error_msg = f"❌ Error procesando la factura: {str(e)}"
