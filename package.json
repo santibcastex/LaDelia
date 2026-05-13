@@ -1,0 +1,19 @@
+{
+  "name": "la-delia-facturas",
+  "version": "1.0.0",
+  "description": "WhatsApp Facturas API with Twilio",
+  "main": "api/index.js",
+  "scripts": {
+    "start": "node api/index.js",
+    "dev": "nodemon api/index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "twilio": "^4.10.0",
+    "dotenv": "^16.3.1",
+    "body-parser": "^1.20.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
