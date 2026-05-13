@@ -12,6 +12,21 @@ class ClaudeService:
     
     async def extract_invoice_data(self, image_bytes: bytes) -> dict:
         try:
+            import os
+            
+            # Modo prueba: si no hay fondos, devolver datos de ejemplo
+            if os.getenv("TEST_MODE", "false").lower() == "true":
+                logger.info("Modo prueba activado - devolviendo datos de ejemplo")
+                return {
+                    "numero_factura": "TEST-001",
+                    "fecha": "13/05/2026",
+                    "contratista": "Contratista de Prueba",
+                    "importe_total": "5000",
+                    "descripcion": "Servicio de prueba",
+                    "lote": "La Delia",
+                    "tipo_trabajo": "Prueba del sistema"
+                }
+            
             base64_image = base64.standard_b64encode(image_bytes).decode("utf-8")
             
             message = self.client.messages.create(
