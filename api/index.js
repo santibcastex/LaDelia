@@ -56,13 +56,6 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Exportar para Vercel
+// Para Vercel Serverless
 module.exports = app;
 
-// Para ejecutar localmente
-const PORT = process.env.PORT || 3000;
-if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
-  });
-}
