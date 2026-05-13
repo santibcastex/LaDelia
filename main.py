@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="La Delia - Facturas API")
 
-# Agregar CORS
+# CORS permisivo para Twilio
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,6 +24,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Middleware de logging
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"📡 {request.method} {request.url.path}")
+    response = await call_next(request)
+    logger.info(f"✅ Response: {response.status_code}")
+    return response
 
 twilio_service = TwilioService()
 claude_service = ClaudeService()
@@ -35,12 +43,16 @@ user_contexts = {}
 def root():
     return {"status": "ok", "service": "La Delia - Facturas API"}
 
+@app.get("/health")
+def health():
+    return {"status": "healthy", "timestamp": "now"}
+
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
-    """Webhook simple para recibir mensajes de Twilio"""
+    """Webhook para recibir mensajes de Twilio"""
+    logger.info("🔔 ========== WEBHOOK POST RECIBIDO ==========")
+    
     try:
-        logger.info("🔔 Webhook POST recibido")
-        
         form_data = await request.form()
         logger.info(f"📋 Form data keys: {list(form_data.keys())}")
         
@@ -48,22 +60,29 @@ async def whatsapp_webhook(request: Request):
         media_url = form_data.get("MediaUrl0")
         message_body = form_data.get("Body", "")
         
-        logger.info(f"📱 De: {phone_number}, Mensaje: {message_body}, Media: {bool(media_url)}")
+        logger.info(f"📱 De: {phone_number}")
+        logger.info(f"💬 Mensaje: {message_body}")
+        logger.info(f"🖼️ Media: {bool(media_url)}")
         
         phone_clean = phone_number.replace("whatsapp:", "") if phone_number else "unknown"
         
         # Respuesta simple de prueba
-        test_response = "✅ TEST: Webhook recibido. Por favor intenta de nuevo."
-        logger.info(f"📤 Respondiendo a {phone_clean}")
+        test_response = "✅ Webhook recibido correctamente!"
+        logger.info(f"📤 Enviando respuesta a {phone_clean}")
         
-        await twilio_service.send_message(phone_clean, test_response)
-        logger.info("✅ Respuesta TEST enviada")
+        try:
+            await twilio_service.send_message(phone_clean, test_response)
+            logger.info("✅ Respuesta enviada exitosamente")
+        except Exception as send_error:
+            logger.error(f"❌ Error enviando respuesta: {str(send_error)}", exc_info=True)
         
+        logger.info("🔔 ========== WEBHOOK FINALIZADO ==========")
         return PlainTextResponse("")
         
     except Exception as e:
         logger.error(f"❌ Error en webhook: {str(e)}", exc_info=True)
-        return PlainTextResponse("Error", status_code=500)
+        logger.info("🔔 ========== WEBHOOK FINALIZADO CON ERROR ==========")
+        return PlainTextResponse("")
 
 @app.post("/admin/approve-invoice/{factura_id}")
 async def approve_invoice(factura_id: str, request: Request):
