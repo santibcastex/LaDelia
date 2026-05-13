@@ -9,8 +9,24 @@ logger = logging.getLogger(__name__)
 class FirestoreService:
     def __init__(self):
         if not firebase_admin._apps:
-            cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "facturas-la-delia-b38a31936715.json")
-            cred = credentials.Certificate(cred_path)
+            import json
+            
+            # Intentar leer desde archivo local primero
+            cred_path = "facturas-la-delia-b38a31936715.json"
+            if os.path.exists(cred_path):
+                cred = credentials.Certificate(cred_path)
+            else:
+                # Si no existe archivo, leer desde variable de entorno
+                cred_json_str = os.getenv("FIREBASE_CREDENTIALS_JSON")
+                if not cred_json_str:
+                    cred_json_str = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+                
+                if cred_json_str:
+                    cred_dict = json.loads(cred_json_str)
+                    cred = credentials.Certificate(cred_dict)
+                else:
+                    raise ValueError("Firebase credentials not found")
+            
             firebase_admin.initialize_app(cred)
         
         self.db = firestore.client()
