@@ -37,107 +37,32 @@ def root():
 
 @app.post("/webhook")
 async def whatsapp_webhook(request: Request):
+    """Webhook simple para recibir mensajes de Twilio"""
     try:
+        logger.info("🔔 Webhook POST recibido")
+        
         form_data = await request.form()
-        phone_number = form_data.get("From")
-        message_body = form_data.get("Body", "")
+        logger.info(f"📋 Form data keys: {list(form_data.keys())}")
+        
+        phone_number = form_data.get("From", "unknown")
         media_url = form_data.get("MediaUrl0")
+        message_body = form_data.get("Body", "")
+        
+        logger.info(f"📱 De: {phone_number}, Mensaje: {message_body}, Media: {bool(media_url)}")
         
         phone_clean = phone_number.replace("whatsapp:", "") if phone_number else "unknown"
-        logger.info(f"📨 Webhook recibido - From: {phone_number}, Media: {bool(media_url)}, Body: {message_body[:50] if message_body else 'N/A'}")
         
-        if phone_clean not in user_contexts:
-            user_contexts[phone_clean] = {
-                "history": [],
-                "factura_id": None,
-                "estado": "esperando_accion"
-            }
+        # Respuesta simple de prueba
+        test_response = "✅ TEST: Webhook recibido. Por favor intenta de nuevo."
+        logger.info(f"📤 Respondiendo a {phone_clean}")
         
-        if media_url:
-            try:
-                logger.info(f"🖼️ Procesando imagen para {phone_clean}")
-                image_bytes = await twilio_service.download_media(media_url)
-                logger.info(f"✅ Imagen descargada: {len(image_bytes)} bytes")
-                
-                factura_data = await claude_service.extract_invoice_data(image_bytes)
-                logger.info(f"✅ Datos extraídos: {factura_data}")
-                
-                factura_id = await firestore_service.save_invoice(
-                    factura_data=factura_data,
-                    phone_number=phone_clean,
-                    image_base64=base64.standard_b64encode(image_bytes).decode("utf-8")
-                )
-                logger.info(f"💾 Factura guardada: {factura_id}")
-                
-                user_contexts[phone_clean]["factura_id"] = factura_id
-                user_contexts[phone_clean]["estado"] = "factura_registrada"
-                
-                response_text = f"""✅ *Factura registrada correctamente*
-
-📋 *Detalles:*
-• Número: {factura_data.get('numero_factura')}
-• Importe: ${factura_data.get('importe_total')}
-• Campo: {factura_data.get('lote')}
-• Estado: _Pendiente validación_
-
-Escribí *"estado"* para consultar en cualquier momento."""
-                
-                logger.info(f"📤 Enviando respuesta a {phone_clean}")
-                await twilio_service.send_message(phone_clean, response_text)
-                logger.info(f"✅ Respuesta enviada")
-                
-            except Exception as e:
-                logger.error(f"❌ Error procesando imagen: {str(e)}", exc_info=True)
-                error_msg = f"❌ Error procesando la factura: {str(e)}"
-                await twilio_service.send_message(phone_clean, error_msg)
-            
-        elif message_body.lower().strip() == "estado":
-            logger.info(f"Consulta de estado desde {phone_clean}")
-            context = user_contexts[phone_clean]
-            
-            if context["factura_id"]:
-                factura_doc = await firestore_service.get_invoice(context["factura_id"])
-                
-                if factura_doc:
-                    estado = factura_doc.get("estado")
-                    datos = factura_doc.get("datos", {})
-                    notas = factura_doc.get("notas", [])
-                    
-                    respuesta = f"""📋 *Estado de tu factura*
-
-Número: {datos.get('numero_factura')}
-Estado: *{estado.upper()}*
-Importe: ${datos.get('importe_total')}"""
-                    
-                    if notas:
-                        ultima_nota = notas[-1]
-                        respuesta += f"\n\n💬 Última nota:\n_{ultima_nota}_"
-                    
-                    if estado == "rechazada":
-                        respuesta += "\n\n❌ Por favor, reenvía con los datos correctos."
-                    elif estado == "aprobada":
-                        respuesta += "\n\n✅ Tu factura fue aprobada."
-                else:
-                    respuesta = "❌ No encontré tu factura. Enviá la foto de nuevo."
-            else:
-                respuesta = "📸 No tengo registro de facturas tuyas. Enviá una foto para comenzar."
-            
-            await twilio_service.send_message(phone_clean, respuesta)
-        else:
-            respuesta = """👋 Hola! Soy el asistente de Agro Neros.
-
-Para registrar una factura:
-📸 Enviá la *foto de la factura*
-
-Para consultar estado:
-📋 Escribí *"estado"*"""
-            
-            await twilio_service.send_message(phone_clean, respuesta)
+        await twilio_service.send_message(phone_clean, test_response)
+        logger.info("✅ Respuesta TEST enviada")
         
         return PlainTextResponse("")
-    
+        
     except Exception as e:
-        logger.error(f"Error en webhook: {str(e)}", exc_info=True)
+        logger.error(f"❌ Error en webhook: {str(e)}", exc_info=True)
         return PlainTextResponse("Error", status_code=500)
 
 @app.post("/admin/approve-invoice/{factura_id}")
