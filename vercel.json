@@ -1,0 +1,10 @@
+[build]
+command = "pip install -r requirements.txt"
+
+[[redirects]]
+source = "/:path*"
+destination = "/api/:path*"
+status = 200
+
+[[environment]]
+PYTHONUNBUFFERED = "1"

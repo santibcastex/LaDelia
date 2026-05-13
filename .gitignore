@@ -1,0 +1,17 @@
+.env
+.env.local
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.vscode/
+.idea/
+*.egg-info/
+dist/
+build/
+.DS_Store
+*.log
+facturas-la-delia-b38a31936715.json
