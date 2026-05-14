@@ -20,23 +20,24 @@ const twilioClient = twilio(accountSid, authToken);
 // Claude
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Firebase - soporte para credenciales como JSON string o path
+// Firebase - lee FIREBASE_CREDENTIALS_JSON (nombre usado en Vercel)
 function initFirebase() {
   if (admin.apps.length) return;
 
-  const credentialsEnv = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  const credentialsEnv =
+    process.env.FIREBASE_CREDENTIALS_JSON ||
+    process.env.GOOGLE_APPLICATION_CREDENTIALS;
+
   if (!credentialsEnv) {
-    console.warn('⚠️  GOOGLE_APPLICATION_CREDENTIALS no configurado');
+    console.warn('⚠️  FIREBASE_CREDENTIALS_JSON no configurado');
     return;
   }
 
   let credential;
   try {
-    // Si es JSON inline (Vercel lo guarda así)
     const parsed = JSON.parse(credentialsEnv);
     credential = admin.credential.cert(parsed);
   } catch {
-    // Si es un path a archivo
     credential = admin.credential.cert(require(credentialsEnv));
   }
 
