@@ -27,7 +27,7 @@ function getTwilioClient() {
 let _anthropic = null;
 function getAnthropic() {
   if (!_anthropic) {
-    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    _anthropic = new Anthropic({ apiKey: (process.env.ANTHROPIC_API_KEY || '').trim() });
   }
   return _anthropic;
 }
