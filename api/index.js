@@ -139,72 +139,48 @@ app.post('/webhook', async (req, res) => {
       return res.send(twiml.toString());
     }
 
-    // Respuesta inmediata a Twilio (evita timeout de 15s)
-    twiml.message('📥 Factura recibida! Estamos procesándola, un momento...');
+    // Procesar sincrónicamente antes de responder (serverless no soporta trabajo post-response)
+    const { base64, contentType } = await downloadImage(mediaUrl);
+    console.log('🖼️  Imagen descargada, enviando a Claude...');
+
+    const invoiceData = await extractInvoiceData(base64, contentType);
+    console.log('📊 Datos extraídos:', JSON.stringify(invoiceData));
+
+    // Guardar en Firestore en paralelo con la respuesta
+    const db = getDb();
+    if (db) {
+      const docRef = await db.collection('facturas').add({
+        ...invoiceData,
+        phone: from.replace('whatsapp:', ''),
+        mediaUrl,
+        estado: 'pendiente_validacion',
+        creadoEn: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      console.log(`💾 Guardado en Firestore: ${docRef.id}`);
+    }
+
+    const resumen = [
+      `✅ *Factura procesada!*`,
+      invoiceData.proveedor ? `🏢 Proveedor: ${invoiceData.proveedor}` : null,
+      invoiceData.numero_factura ? `🔢 Nº: ${invoiceData.numero_factura}` : null,
+      invoiceData.fecha ? `📅 Fecha: ${invoiceData.fecha}` : null,
+      invoiceData.monto_total != null
+        ? `💰 Total: ${invoiceData.moneda || ''} ${invoiceData.monto_total}`
+        : null,
+      invoiceData.concepto ? `📝 ${invoiceData.concepto}` : null,
+      `\nEstado: _Pendiente de validación_`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    twiml.message(resumen);
     res.type('text/xml');
     res.send(twiml.toString());
+    console.log('📤 Respuesta enviada');
 
-    // Procesamiento async
-    setImmediate(async () => {
-      try {
-        const { base64, contentType } = await downloadImage(mediaUrl);
-        console.log('🖼️  Imagen descargada, enviando a Claude...');
-
-        const invoiceData = await extractInvoiceData(base64, contentType);
-        console.log('📊 Datos extraídos:', JSON.stringify(invoiceData));
-
-        const db = getDb();
-        let facturaId = null;
-
-        if (db) {
-          const docRef = await db.collection('facturas').add({
-            ...invoiceData,
-            phone: from.replace('whatsapp:', ''),
-            mediaUrl,
-            estado: 'pendiente_validacion',
-            creadoEn: admin.firestore.FieldValue.serverTimestamp(),
-          });
-          facturaId = docRef.id;
-          console.log(`💾 Guardado en Firestore: ${facturaId}`);
-        }
-
-        const resumen = [
-          `✅ *Factura procesada!*`,
-          invoiceData.proveedor ? `🏢 Proveedor: ${invoiceData.proveedor}` : null,
-          invoiceData.numero_factura ? `🔢 Nº: ${invoiceData.numero_factura}` : null,
-          invoiceData.fecha ? `📅 Fecha: ${invoiceData.fecha}` : null,
-          invoiceData.monto_total != null
-            ? `💰 Total: ${invoiceData.moneda || ''} ${invoiceData.monto_total}`
-            : null,
-          invoiceData.concepto ? `📝 ${invoiceData.concepto}` : null,
-          `\nEstado: _Pendiente de validación_`,
-        ]
-          .filter(Boolean)
-          .join('\n');
-
-        await getTwilioClient().messages.create({
-          from: `whatsapp:${process.env.TWILIO_PHONE}`,
-          to: from,
-          body: resumen,
-        });
-
-        console.log('📤 Resumen enviado al usuario');
-      } catch (err) {
-        console.error('❌ Error procesando factura:', err);
-        try {
-          await getTwilioClient().messages.create({
-            from: `whatsapp:${process.env.TWILIO_PHONE}`,
-            to: from,
-            body: '❌ Hubo un error procesando tu factura. Intentá de nuevo o contactá al administrador.',
-          });
-        } catch (sendErr) {
-          console.error('❌ Error enviando mensaje de error:', sendErr.message);
-        }
-      }
-    });
   } catch (error) {
     console.error('❌ Error en webhook:', error);
-    twiml.message('❌ Error interno. Intentá de nuevo.');
+    twiml.message('❌ Error procesando la factura. Intentá de nuevo.');
     res.type('text/xml');
     res.send(twiml.toString());
   }
