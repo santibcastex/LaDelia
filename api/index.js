@@ -180,7 +180,7 @@ app.post('/webhook', async (req, res) => {
 
   } catch (error) {
     console.error('❌ Error en webhook:', error);
-    twiml.message('❌ Error procesando la factura. Intentá de nuevo.');
+    twiml.message(`❌ Error: ${error.message}`);
     res.type('text/xml');
     res.send(twiml.toString());
   }
