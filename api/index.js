@@ -271,4 +271,3 @@ app.get('/admin/invoices', async (req, res) => {
 });
 
 module.exports = app;
-
