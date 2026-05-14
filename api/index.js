@@ -4,57 +4,68 @@ const twilio = require('twilio');
 const Anthropic = require('@anthropic-ai/sdk');
 const admin = require('firebase-admin');
 const axios = require('axios');
-require('dotenv').config();
 
 const app = express();
 
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
-// Twilio
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
-const twilioPhone = process.env.TWILIO_PHONE;
-const twilioClient = twilio(accountSid, authToken);
+// ── Lazy singletons ─────────────────────────────────────────────────────────
 
-// Claude
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-// Firebase - lee FIREBASE_CREDENTIALS_JSON (nombre usado en Vercel)
-function initFirebase() {
-  if (admin.apps.length) return;
-
-  const credentialsEnv =
-    process.env.FIREBASE_CREDENTIALS_JSON ||
-    process.env.GOOGLE_APPLICATION_CREDENTIALS;
-
-  if (!credentialsEnv) {
-    console.warn('⚠️  FIREBASE_CREDENTIALS_JSON no configurado');
-    return;
+let _twilioClient = null;
+function getTwilioClient() {
+  if (!_twilioClient) {
+    _twilioClient = twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
+    );
   }
-
-  let credential;
-  try {
-    const parsed = JSON.parse(credentialsEnv);
-    credential = admin.credential.cert(parsed);
-  } catch {
-    credential = admin.credential.cert(require(credentialsEnv));
-  }
-
-  admin.initializeApp({ credential });
+  return _twilioClient;
 }
 
-initFirebase();
+let _anthropic = null;
+function getAnthropic() {
+  if (!_anthropic) {
+    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return _anthropic;
+}
 
+let _firebaseReady = false;
 function getDb() {
-  if (!admin.apps.length) return null;
+  if (!_firebaseReady) {
+    const credentialsEnv =
+      process.env.FIREBASE_CREDENTIALS_JSON ||
+      process.env.GOOGLE_APPLICATION_CREDENTIALS;
+
+    if (!credentialsEnv) {
+      console.warn('⚠️  FIREBASE_CREDENTIALS_JSON no configurado');
+      return null;
+    }
+
+    try {
+      if (!admin.apps.length) {
+        const parsed = JSON.parse(credentialsEnv);
+        admin.initializeApp({ credential: admin.credential.cert(parsed) });
+      }
+      _firebaseReady = true;
+    } catch (err) {
+      console.error('❌ Error inicializando Firebase:', err.message);
+      return null;
+    }
+  }
+
   return admin.firestore();
 }
 
-// Descarga imagen de Twilio con autenticación básica
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
 async function downloadImage(mediaUrl) {
   const response = await axios.get(mediaUrl, {
-    auth: { username: accountSid, password: authToken },
+    auth: {
+      username: process.env.TWILIO_ACCOUNT_SID,
+      password: process.env.TWILIO_AUTH_TOKEN,
+    },
     responseType: 'arraybuffer',
     timeout: 15000,
   });
@@ -63,9 +74,8 @@ async function downloadImage(mediaUrl) {
   return { base64, contentType };
 }
 
-// Extrae datos de factura con Claude Vision
 async function extractInvoiceData(imageBase64, contentType) {
-  const response = await anthropic.messages.create({
+  const response = await getAnthropic().messages.create({
     model: 'claude-opus-4-7',
     max_tokens: 1024,
     messages: [
@@ -99,19 +109,18 @@ Si algún campo no está visible, usá null. Respondé SOLO con el JSON, sin tex
   try {
     return JSON.parse(text);
   } catch {
-    // Intentar extraer JSON si Claude agregó algo extra
     const match = text.match(/\{[\s\S]*\}/);
     if (match) return JSON.parse(match[0]);
     throw new Error('Claude no devolvió JSON válido: ' + text);
   }
 }
 
-// Health check
+// ── Rutas ────────────────────────────────────────────────────────────────────
+
 app.get('/', (req, res) => {
   res.json({ status: 'ok', service: 'La Delia - Facturas API' });
 });
 
-// Webhook de Twilio
 app.post('/webhook', async (req, res) => {
   const twiml = new twilio.twiml.MessagingResponse();
 
@@ -119,37 +128,30 @@ app.post('/webhook', async (req, res) => {
     console.log('🔔 WEBHOOK RECIBIDO');
 
     const from = req.body.From || '';
-    const body = req.body.Body || '';
-    const mediaUrl = req.body.MediaUrl0;
     const numMedia = parseInt(req.body.NumMedia || '0', 10);
+    const mediaUrl = req.body.MediaUrl0;
 
-    console.log(`📱 De: ${from}`);
-    console.log(`💬 Mensaje: ${body}`);
-    console.log(`🖼️  Media: ${numMedia > 0}`);
-
-    const phoneClean = from.replace('whatsapp:', '');
+    console.log(`📱 De: ${from} | Media: ${numMedia}`);
 
     if (numMedia === 0 || !mediaUrl) {
-      twiml.message(
-        '👋 Hola! Enviá una foto de tu factura y la procesaremos automáticamente.'
-      );
+      twiml.message('👋 Hola! Enviá una foto de tu factura y la procesaremos automáticamente.');
       res.type('text/xml');
       return res.send(twiml.toString());
     }
 
-    // Acuse de recibo inmediato
+    // Respuesta inmediata a Twilio (evita timeout de 15s)
     twiml.message('📥 Factura recibida! Estamos procesándola, un momento...');
     res.type('text/xml');
     res.send(twiml.toString());
 
-    // Procesamiento async después de responder a Twilio
+    // Procesamiento async
     setImmediate(async () => {
       try {
         const { base64, contentType } = await downloadImage(mediaUrl);
         console.log('🖼️  Imagen descargada, enviando a Claude...');
 
         const invoiceData = await extractInvoiceData(base64, contentType);
-        console.log('📊 Datos extraídos:', invoiceData);
+        console.log('📊 Datos extraídos:', JSON.stringify(invoiceData));
 
         const db = getDb();
         let facturaId = null;
@@ -157,7 +159,7 @@ app.post('/webhook', async (req, res) => {
         if (db) {
           const docRef = await db.collection('facturas').add({
             ...invoiceData,
-            phone: phoneClean,
+            phone: from.replace('whatsapp:', ''),
             mediaUrl,
             estado: 'pendiente_validacion',
             creadoEn: admin.firestore.FieldValue.serverTimestamp(),
@@ -180,8 +182,8 @@ app.post('/webhook', async (req, res) => {
           .filter(Boolean)
           .join('\n');
 
-        await twilioClient.messages.create({
-          from: `whatsapp:${twilioPhone}`,
+        await getTwilioClient().messages.create({
+          from: `whatsapp:${process.env.TWILIO_PHONE}`,
           to: from,
           body: resumen,
         });
@@ -189,11 +191,15 @@ app.post('/webhook', async (req, res) => {
         console.log('📤 Resumen enviado al usuario');
       } catch (err) {
         console.error('❌ Error procesando factura:', err);
-        await twilioClient.messages.create({
-          from: `whatsapp:${twilioPhone}`,
-          to: from,
-          body: '❌ Hubo un error procesando tu factura. Intentá de nuevo o contactá al administrador.',
-        });
+        try {
+          await getTwilioClient().messages.create({
+            from: `whatsapp:${process.env.TWILIO_PHONE}`,
+            to: from,
+            body: '❌ Hubo un error procesando tu factura. Intentá de nuevo o contactá al administrador.',
+          });
+        } catch (sendErr) {
+          console.error('❌ Error enviando mensaje de error:', sendErr.message);
+        }
       }
     });
   } catch (error) {
@@ -204,17 +210,14 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Aprobar factura
 app.post('/admin/approve-invoice/:facturaId', async (req, res) => {
   const { facturaId } = req.params;
   const db = getDb();
-
   if (!db) return res.status(503).json({ error: 'Firestore no disponible' });
 
   try {
     const ref = db.collection('facturas').doc(facturaId);
     const doc = await ref.get();
-
     if (!doc.exists) return res.status(404).json({ error: 'Factura no encontrada' });
 
     await ref.update({
@@ -224,8 +227,8 @@ app.post('/admin/approve-invoice/:facturaId', async (req, res) => {
 
     const data = doc.data();
     if (data.phone) {
-      await twilioClient.messages.create({
-        from: `whatsapp:${twilioPhone}`,
+      await getTwilioClient().messages.create({
+        from: `whatsapp:${process.env.TWILIO_PHONE}`,
         to: `whatsapp:${data.phone}`,
         body: `✅ Tu factura ${data.numero_factura || facturaId} fue *aprobada*. Será procesada en el próximo ciclo de pagos.`,
       });
@@ -238,18 +241,15 @@ app.post('/admin/approve-invoice/:facturaId', async (req, res) => {
   }
 });
 
-// Rechazar factura
 app.post('/admin/reject-invoice/:facturaId', async (req, res) => {
   const { facturaId } = req.params;
   const { motivo } = req.body;
   const db = getDb();
-
   if (!db) return res.status(503).json({ error: 'Firestore no disponible' });
 
   try {
     const ref = db.collection('facturas').doc(facturaId);
     const doc = await ref.get();
-
     if (!doc.exists) return res.status(404).json({ error: 'Factura no encontrada' });
 
     await ref.update({
@@ -262,10 +262,10 @@ app.post('/admin/reject-invoice/:facturaId', async (req, res) => {
     if (data.phone) {
       const msg = motivo
         ? `❌ Tu factura ${data.numero_factura || facturaId} fue *rechazada*. Motivo: ${motivo}`
-        : `❌ Tu factura ${data.numero_factura || facturaId} fue *rechazada*. Contactá al administrador para más información.`;
+        : `❌ Tu factura ${data.numero_factura || facturaId} fue *rechazada*. Contactá al administrador.`;
 
-      await twilioClient.messages.create({
-        from: `whatsapp:${twilioPhone}`,
+      await getTwilioClient().messages.create({
+        from: `whatsapp:${process.env.TWILIO_PHONE}`,
         to: `whatsapp:${data.phone}`,
         body: msg,
       });
@@ -278,7 +278,6 @@ app.post('/admin/reject-invoice/:facturaId', async (req, res) => {
   }
 });
 
-// Listar facturas (útil para el panel admin)
 app.get('/admin/invoices', async (req, res) => {
   const db = getDb();
   if (!db) return res.status(503).json({ error: 'Firestore no disponible' });
