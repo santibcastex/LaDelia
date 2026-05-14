@@ -61,11 +61,8 @@ function getDb() {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 async function downloadImage(mediaUrl) {
+  // Twilio sandbox media URLs son públicas; en producción agregar auth si hace falta
   const response = await axios.get(mediaUrl, {
-    auth: {
-      username: process.env.TWILIO_ACCOUNT_SID,
-      password: process.env.TWILIO_AUTH_TOKEN,
-    },
     responseType: 'arraybuffer',
     timeout: 15000,
   });
